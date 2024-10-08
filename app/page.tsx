@@ -1,101 +1,146 @@
-import Image from "next/image";
+"use client"
+
+import { useState } from 'react';
+import OpenAI from 'openai';
+import { Groq } from 'groq-sdk';
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [userInput, setUserInput] = useState('');
+  const [podcastContent, setPodcastContent] = useState('');
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [openApiKey, setOpenApiKey] = useState('');
+  const [groqApiKey, setGroqApiKey] = useState('');
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  const generatePodcastText = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const groq = new Groq({ apiKey: groqApiKey, dangerouslyAllowBrowser: true });
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: "You are podcast generating AI. User will send you text and you will create a podcast episode script, it should be around 10 minutes when read aloud. Make sure you speak in the tone of voice like podcasts, explain it simply and have lighthearted style of talking. Everything you generate will be read out loud, so no square brackets, special instrcutions, titles, only plain text that will be fully read in a lighhearted podcast style."
+          },
+          {
+            role: "user",
+            content: userInput
+          }
+        ],
+        model: "llama3-8b-8192",
+        temperature: 1,
+        max_tokens: 8192,
+        top_p: 1,
+        stream: false,
+        stop: null
+      });
+      setPodcastContent(chatCompletion.choices[0]?.message?.content || '');
+    } catch (err) {
+      console.log(err)
+      setError('Error generating podcast content');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateAudio = async () => {
+    setLoading(true);
+    setError(null);
+    setAudioUrl('');
+    try {
+      const openai = new OpenAI({ apiKey: openApiKey, dangerouslyAllowBrowser: true });
+      const mp3 = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: 'alloy',
+        input: podcastContent,
+      });
+
+      const buffer = Buffer.from(await mp3.arrayBuffer());
+      const blob = new Blob([buffer], { type: 'audio/mp3' });
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+    } catch (err) {
+      console.log(err)
+      setError('Error generating audio');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+      <h1 className="text-3xl font-bold mb-8">Podcast Generator and Text to Speech</h1>
+
+      <input
+        type="password"
+        value={openApiKey}
+        onChange={(e) => setOpenApiKey(e.target.value)}
+        placeholder="Enter OpenAI API Key"
+        className="w-full max-w-md px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+
+      <input
+        type="password"
+        value={groqApiKey}
+        onChange={(e) => setGroqApiKey(e.target.value)}
+        placeholder="Enter Groq API Key"
+        className="w-full max-w-md px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+      />
+
+      <textarea
+        value={userInput}
+        onChange={(e) => setUserInput(e.target.value)}
+        placeholder="Enter podcast topic"
+        className="w-full max-w-md px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+        rows={4}
+      />
+
+      <button
+        onClick={generatePodcastText}
+        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 mb-4"
+        disabled={loading || !openApiKey || !groqApiKey || !userInput}
+      >
+        {loading ? 'Generating...' : 'Generate Podcast Content'}
+      </button>
+
+      {podcastContent && (
+        <>
+          <textarea
+            value={podcastContent}
+            onChange={(e) => setPodcastContent(e.target.value)}
+            className="w-full max-w-md px-4 py-2 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+            rows={10}
+          />
+
+          <button
+            onClick={generateAudio}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-400 mb-4"
+            disabled={loading || !openApiKey || !podcastContent}
           >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
+            {loading ? 'Generating...' : 'Generate Voice'}
+          </button>
+        </>
+      )}
+
+      {error && <p className="text-red-500">{error}</p>}
+
+      {audioUrl && (
+        <div className="mt-8 w-full max-w-md">
+          <audio controls className="w-full">
+            <source src={audioUrl} type="audio/mpeg" />
+            Your browser does not support the audio element.
+          </audio>
           <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            href={audioUrl}
+            download="podcast.mp3"
+            className="mt-4 inline-block text-blue-500 hover:underline"
           >
-            Read our docs
+            Download Audio
           </a>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      )}
     </div>
   );
 }
